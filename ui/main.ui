@@ -27,29 +27,6 @@
        </size>
       </property>
       <layout class="QGridLayout" name="gridLayout_5">
-       <item row="1" column="0">
-        <widget class="QPushButton" name="button_refrush">
-         <property name="text">
-          <string>刷新</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="0" colspan="3">
-        <widget class="QTableView" name="tableView_process"/>
-       </item>
-       <item row="1" column="1">
-        <spacer name="horizontalSpacer_3">
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>40</width>
-           <height>20</height>
-          </size>
-         </property>
-        </spacer>
-       </item>
        <item row="0" column="0" colspan="2">
         <widget class="QLabel" name="label_5">
          <property name="maximumSize">
@@ -66,14 +43,57 @@
          </property>
         </widget>
        </item>
+       <item row="1" column="0">
+        <widget class="QPushButton" name="button_refrush">
+         <property name="text">
+          <string>刷新</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <spacer name="horizontalSpacer_3">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item row="3" column="0" colspan="3">
+        <widget class="QTableView" name="tableView_process"/>
+       </item>
+       <item row="2" column="1">
+        <widget class="QLineEdit" name="lineEdit_process_search"/>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_10">
+         <property name="text">
+          <string>搜索</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
       </layout>
      </widget>
     </item>
     <item row="1" column="0">
      <widget class="QWidget" name="widget_2" native="true">
       <layout class="QGridLayout" name="gridLayout_3">
-       <item row="3" column="0" colspan="3">
-        <widget class="QListView" name="listView_local"/>
+       <item row="0" column="0" colspan="2">
+        <widget class="QLabel" name="label">
+         <property name="text">
+          <string>本地(回车跳转）</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+        </widget>
        </item>
        <item row="2" column="0">
         <widget class="QPushButton" name="button_local_up">
@@ -91,8 +111,28 @@
          </property>
         </widget>
        </item>
+       <item row="4" column="0" colspan="3">
+        <widget class="QListView" name="listView_local">
+         <property name="selectionMode">
+          <enum>QAbstractItemView::ExtendedSelection</enum>
+         </property>
+        </widget>
+       </item>
        <item row="1" column="0" colspan="3">
         <widget class="QLineEdit" name="local_dir"/>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_8">
+         <property name="text">
+          <string>搜索</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="1" colspan="2">
+        <widget class="QLineEdit" name="lineEdit_local_search"/>
        </item>
        <item row="2" column="1">
         <spacer name="horizontalSpacer">
@@ -106,16 +146,6 @@
           </size>
          </property>
         </spacer>
-       </item>
-       <item row="0" column="0" colspan="2">
-        <widget class="QLabel" name="label">
-         <property name="text">
-          <string>本地(回车跳转）</string>
-         </property>
-         <property name="alignment">
-          <set>Qt::AlignCenter</set>
-         </property>
-        </widget>
        </item>
       </layout>
      </widget>
@@ -195,15 +225,35 @@
      </widget>
     </item>
     <item row="1" column="2">
-     <widget class="QWidget" name="widget_4" native="true">
+     <widget class="QWidget" name="widget_server" native="true">
+      <property name="enabled">
+       <bool>true</bool>
+      </property>
       <layout class="QGridLayout" name="gridLayout_2">
-       <item row="3" column="0" colspan="4">
-        <widget class="QListView" name="listView_server"/>
+       <item row="4" column="0" colspan="4">
+        <widget class="QListView" name="listView_server">
+         <property name="selectionMode">
+          <enum>QAbstractItemView::ExtendedSelection</enum>
+         </property>
+        </widget>
        </item>
        <item row="1" column="0" colspan="4">
         <widget class="QLineEdit" name="server_dir">
          <property name="readOnly">
           <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="0" colspan="4">
+        <widget class="QLabel" name="label_2">
+         <property name="text">
+          <string>远程</string>
+         </property>
+         <property name="textFormat">
+          <enum>Qt::AutoText</enum>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
          </property>
         </widget>
        </item>
@@ -247,13 +297,13 @@
          </property>
         </spacer>
        </item>
-       <item row="0" column="0" colspan="4">
-        <widget class="QLabel" name="label_2">
+       <item row="3" column="1" colspan="3">
+        <widget class="QLineEdit" name="lineEdit_server_search"/>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_9">
          <property name="text">
-          <string>远程</string>
-         </property>
-         <property name="textFormat">
-          <enum>Qt::AutoText</enum>
+          <string>搜索</string>
          </property>
          <property name="alignment">
           <set>Qt::AlignCenter</set>

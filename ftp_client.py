@@ -1,14 +1,16 @@
+import json
+import sys
 import os
+if hasattr(sys, 'frozen'):
+    os.environ['PATH'] = sys._MEIPASS + ";" + os.environ['PATH']
 import shutil
 import time
 from ftplib import FTP
-import sys
+from qt_thread import Downloadthread, Uploadthread
 from utils.file import get_size
 
 import requests
 
-if hasattr(sys, 'frozen'):
-    os.environ['PATH'] = sys._MEIPASS + ";" + os.environ['PATH']
 from PyQt5.QtCore import QStringListModel, QPoint, QThread, pyqtSignal
 from PyQt5.QtGui import QCursor, QStandardItemModel, QStandardItem
 
@@ -16,211 +18,24 @@ from ui import main
 from PyQt5.QtWidgets import QApplication, QMainWindow, QAbstractItemView, QMenu, QMessageBox, QHeaderView
 from utils.file_manage import FileManage
 from log import logger
+from utils.constant import file_ico, dir_ico
 
 file = FileManage(current_dir='C:\\')
-file_ico = '📄'
-dir_ico = '📂'
 
 def error_msg():
     current_time = time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))
     return '{} 出了点问题，详情请见日志'.format(current_time)
 
 
-class Downloadthread(QThread):
-    """
-    下载线程，用于下载文件或目录
-    """
-    _signal = pyqtSignal(int)
 
-    def __init__(self, ftpclient, server_filename, server_dir, local_dir, overwrite=False):
-        super(Downloadthread, self).__init__()
-        self.step = 0
-        self.ftpclient=ftpclient
-        self.server_filename=server_filename
-        self.server_dir=server_dir
-        self.local_dir=local_dir
-        self.overwrite=overwrite
-
-    def __del__(self):
-        self.wait()
-
-    def ftp_download(self, ftpclient, server_filename, server_dir, local_dir, overwrite=False):
-        """
-        Ftp单文件下载
-        :param ftpclient: ftpclient实例
-        :param server_filename: 要下载的文件名
-        :param server_dir: 所在服务器目录
-        :param local_dir: 所在本地目录
-        :param overwrite: 当文件存在时，是否重写文件
-        :return:
-        """
-        buf_size = 1024
-        M=1024*1024
-        def write(data):
-            self.step+=buf_size
-            if self.step%M==0:
-                self._signal.emit(self.step/M)
-            fp.write(data)
-
-        if not overwrite:
-            local_filename = server_filename
-            while os.path.isfile(os.path.join(local_dir, local_filename)):
-                local_filename = local_filename + '.bak'
-        else:
-            local_filename = server_filename
-        fp = open(os.path.join(local_dir, local_filename), "wb")
-        ftpclient.ftp.retrbinary('RETR {}'.format(os.path.join(server_dir, server_filename)), write, buf_size)
-        fp.close()
-
-    def _ftp_download_dir(self, ftpclient, target_dir, server_dir, local_dir,overwrite):
-        """
-        递归下载目录里所有文件
-        :param ftpclient: ftpclient实例
-        :param target_dir: 要下载的目录（或文件）
-        :param server_dir: 所在服务器目录
-        :param local_dir: 所在本地目录
-        :param overwrite: 当文件存在时，是否重写文件
-        :return:
-        """
-        # self.log_list.setText(self.log_list.toPlainText() + '\n' + target_dir)
-        ftpclient.ftp.cwd(server_dir)
-        target_type = ftpclient.server_file_type(target_dir)
-        if target_type == 'file':
-            self.ftp_download(ftpclient, target_dir, server_dir, local_dir,overwrite)
-        elif target_type == 'dir':
-            os.mkdir(os.path.join(local_dir, target_dir))
-            ftpclient.ftp.cwd(target_dir)
-            for file in ftpclient.ftp.mlsd(facts=['type']):
-                filename = file[0]
-                file_type = file[1]['type']
-                self._ftp_download_dir(ftpclient, filename,
-                                      os.path.join(server_dir,target_dir),
-                                      os.path.join(local_dir, target_dir),overwrite)
-
-    def ftp_download_dir(self, ftpclient, target_dir, server_dir, local_dir,overwrite):
-        """
-        递归下载目录里所有文件，把恢复服务器目录，发送完成信号
-        :param ftpclient: ftpclient实例
-        :param target_dir: 要下载的目录（或文件）
-        :param server_dir: 所在服务器目录
-        :param local_dir: 所在本地目录
-        :param overwrite: 当文件存在时，是否重写文件
-        :return:
-        """
-        server_dir_tmp = ftpclient.ftp.pwd()
-        self._ftp_download_dir(ftpclient, target_dir, server_dir, local_dir,overwrite)
-        ftpclient.ftp.cwd(server_dir_tmp)
-        self._signal.emit(0)
-        #ftpclient.listView_local_display(file)
-        #ftpclient.log_list.setText('下载完成')
-
-    def run(self):
-        """
-        线程运行
-        :return:
-        """
-        self.ftp_download_dir(self.ftpclient,self.server_filename,self.server_dir,self.local_dir,self.overwrite)
-
-
-class Uploadthread(QThread):
-    """
-    上传线程，用于本地上传文件/目录
-    """
-    _signal = pyqtSignal(int)
-    _signal_bar = pyqtSignal(int)
-
-    def __init__(self, ftpclient, local_filename, local_dir, server_dir, overwrite=False):
-        super(Uploadthread, self).__init__()
-        self.step = 0
-        self.size = get_size(os.path.join(local_dir, local_filename))
-        self.ftpclient=ftpclient
-        self.local_filename=local_filename
-        self.server_dir=server_dir
-        self.local_dir=local_dir
-        self.overwrite=overwrite
-
-    def __del__(self):
-        self.wait()
-
-    def ftp_upload(self, ftpclient, local_filename, local_dir, server_dir, overwrite=False):
-        """
-        ftp上传单文件
-        :param ftpclient: ftpclient实例
-        :param local_filename: 要上传的文件名
-        :param server_dir: 所在服务器目录
-        :param local_dir: 所在本地目录
-        :param overwrite: 当文件存在时，是否重写文件
-        :return:
-        """
-        buf_size = 1024
-        M = 1024 * 1024
-        def upload_file_cb(block):
-            self.step += buf_size
-            if self.step % M == 0:
-                self._signal.emit(self.step / M)
-                percentage = int(self.step/self.size*100)
-                self._signal_bar.emit(percentage)
-
-
-        if not overwrite:
-            server_filename = local_filename
-            while '{} {}'.format(file_ico, server_filename) in ftpclient.server_list:
-                server_filename = server_filename + '.bak'
-        else:
-            server_filename = local_filename
-        fp = open(os.path.join(local_dir, local_filename), "rb")
-        ftpclient.ftp.storbinary("STOR {}".format(os.path.join(server_dir, server_filename)), fp, buf_size, callback = upload_file_cb)
-        fp.close()
-
-    def _ftp_upload_dir(self,ftpclient, target_dir, local_dir, server_dir, overwrite):
-        """
-        递归上传文件或目录
-        :param ftpclient: ftpclient实例
-        :param target_dir: 要上传的文件/目录
-        :param server_dir: 所在服务器目录
-        :param local_dir: 所在本地目录
-        :param overwrite: 当文件存在时，是否重写文件
-        :return:
-        """
-        ftpclient.ftp.cwd(server_dir)
-        local_path = os.path.join(local_dir, target_dir)
-        if os.path.isfile(local_path):
-            self.ftp_upload(ftpclient,target_dir, local_dir, server_dir, overwrite)
-        elif os.path.isdir(local_dir):
-            ftpclient.ftp.mkd(target_dir)
-            ftpclient.ftp.cwd(target_dir)
-            for filename in os.listdir(os.path.join(local_dir, target_dir)):
-                print('上传{}'.format(filename))
-                self._ftp_upload_dir(ftpclient, filename,
-                                      os.path.join(local_dir,target_dir),
-                                      os.path.join(server_dir, target_dir),overwrite)
-
-    def ftp_upload_dir(self,ftpclient, target_dir, local_dir, server_dir,overwrite):
-        """
-        递归上传文件或目录，把服务器目录还原，并发送成功信号
-        :param ftpclient: ftpclient实例
-        :param target_dir: 要上传的文件/目录
-        :param server_dir: 所在服务器目录
-        :param local_dir: 所在本地目录
-        :param overwrite: 当文件存在时，是否重写文件
-        :return:
-        """
-        server_dir_tmp = ftpclient.ftp.pwd()
-        self._ftp_upload_dir(ftpclient,target_dir, local_dir, server_dir,overwrite)
-        ftpclient.ftp.cwd(server_dir_tmp)
-        self._signal.emit(0)
-
-    def run(self):
-        """
-        线程运行
-        :return:
-        """
-        self.ftp_upload_dir(self.ftpclient,self.local_filename,self.local_dir,self.server_dir,self.overwrite)
 
 
 class FtpClient(main.Ui_MainWindow):
     def __init__(self, window):
         super(FtpClient, self).__init__()
+        self.local_list = []
+        self.server_list = []
+        self.process_list = []
         self.size=0
         self.setupUi(window)
         self.ftp = FTP()
@@ -261,18 +76,107 @@ class FtpClient(main.Ui_MainWindow):
         self.button_changeD.clicked.connect(self.button_changeD_clicked)
         self.local_dir.returnPressed.connect(self.local_dir_returnPressed)
 
+        self.lineEdit_local_search.textChanged.connect(self.lineEdit_local_search_textChanged)
+        self.lineEdit_server_search.textChanged.connect(self.lineEdit_server_search_textChanged)
+        self.lineEdit_process_search.textChanged.connect(self.lineEdit_process_search_textChanged)
+
+
+
     # 功能函数
+    def test(self,data):
+        query_list = []
+        for line in self.local_list:
+            if data in line:
+                query_list.append(line)
+        self.slm.setStringList(query_list)
+
+    def lineEdit_local_search_textChanged(self, data):
+        query_list = []
+        for line in self.local_list:
+            if data in line:
+                query_list.append(line)
+        self.slm.setStringList(query_list)
+
+    def lineEdit_server_search_textChanged(self, data):
+        query_list = []
+        for line in self.server_list:
+            if data in line:
+                query_list.append(line)
+        self.slm_server.setStringList(query_list)
+
+    def lineEdit_process_search_textChanged(self, data):
+        tmp = self.process_list
+        r=[]
+        for line in tmp:
+            if data in line[0]:
+                r.append(line)
+        self.tlm.clear()
+        for x in range(len(r)):
+            for y in range(3):
+                item = QStandardItem(r[x][y])
+                self.tlm.setItem(x, y, item)
+
+    def server_delete_item(self, filename):
+        """
+        远程删除一项
+        :param filename:
+        :return:
+        """
+        try:
+            self.ftp.delete(filename)
+        except:
+            self.delAllfile(filename, self.ftp.pwd())
+        finally:
+            self.listView_server_display()
+
+    def server_delete_items(self, filenames):
+        """
+        远程删除多项
+        :param filenames:
+        :return:
+        """
+        for filename in filenames:
+            print('删除{}'.format(filename))
+            self.server_delete_item(filename)
+            time.sleep(0.1)
+        self.listView_server_display()
+
+    def local_delete_item(self, filename):
+        """
+        本地删除一项
+        :param filename:
+        :return:
+        """
+        path = os.path.join(file.current_dir, filename)
+        if os.path.isfile(path):
+            os.remove(path)
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
+
+    def local_delete_items(self, filenames):
+        """
+        本地删除多项
+        :param filenames:
+        :return:
+        """
+        for filename in filenames:
+            print('删除{}'.format(filename))
+            self.local_delete_item(filename)
+            time.sleep(0.1)
+        self.listView_local_display(file)
+
     def refrush_process(self):
         """
         刷新远程进程
         :return:
         """
         r = requests.get('http://{ip}:{port}/process_list'.format(ip = self.address,port = 5001))
-        process_list = r.json()
-        for x in range(len(process_list)):
+        self.process_list = r.json()
+        for x in range(len(self.process_list)):
             for y in range(3):
-                item = QStandardItem(process_list[x][y])
+                item = QStandardItem(self.process_list[x][y])
                 self.tlm.setItem(x,y,item)
+        self.lineEdit_process_search.setText('')
 
     def server_file_type(self, current_filename):
         """
@@ -298,8 +202,8 @@ class FtpClient(main.Ui_MainWindow):
         file.update_list()
         file_list = ['{} {}'.format(dir_ico, dir) for dir in file.sub_directory_list] + \
                     ['{} {}'.format(file_ico, filename) for filename in file.sub_file_list]
-        file_list = [file for file in file_list if not file.split(' ',1)[1].startswith('.')]
-        self.slm.setStringList(file_list)
+        self.local_list = [file for file in file_list if not file.split(' ',1)[1].startswith('.')]
+        self.slm.setStringList(self.local_list)
 
         self.local_dir.setText(file.current_dir)
 
@@ -355,6 +259,15 @@ class FtpClient(main.Ui_MainWindow):
         else:
             self.log_list.setText('当前未选中文件')
 
+    def local_selected_items(self):
+        """
+        本地选中的所有文件或文件夹
+        :return: list
+        """
+        items = self.listView_local.selectedIndexes()
+        return [item.data().split(' ',1)[1] for item in items]
+
+
     def server_selected_file(self):
         """
         远程选中的文件名
@@ -385,6 +298,14 @@ class FtpClient(main.Ui_MainWindow):
             return 'dir'
         elif filename.startswith(file_ico):
             return 'file'
+
+    def server_selected_items(self):
+        """
+        本地选中的所有文件或文件夹
+        :return: list
+        """
+        items = self.listView_server.selectedIndexes()
+        return [item.data().split(' ',1)[1] for item in items]
 
 
     '''
@@ -429,7 +350,6 @@ class FtpClient(main.Ui_MainWindow):
         :return:
         """
         print('{}--{}'.format(server_dir, target_dir))
-        #print('{}/{}'.format(server_dir, target_dir))
         self.ftp.cwd('{}/{}'.format(server_dir, target_dir))
         for file in self.ftp.mlsd(facts=['type']):
             filename = file[0]
@@ -455,12 +375,26 @@ class FtpClient(main.Ui_MainWindow):
         local_tmp_dir = r'C:\tmp'
         if not os.path.isdir(local_tmp_dir):
             os.mkdir(local_tmp_dir)
-        self.ftp_download(filename, self.ftp.pwd(), local_tmp_dir, overwrite = True)
+        self.ftp_download(filename, self.ftp.pwd(), local_tmp_dir)
         os.system('notepad.exe "{}"'.format(os.path.join(local_tmp_dir,filename)))
         # 编辑结束
-        self.ftp_upload(filename, local_tmp_dir, self.ftp.pwd(), overwrite=True)
+        self.ftp_upload(filename, local_tmp_dir, self.ftp.pwd())
         os.remove(os.path.join(local_tmp_dir,filename))
         print('done')
+
+    def ftp_download(self, server_filename, server_dir, local_dir):
+        buf_size = 1024
+        local_filename = server_filename
+        fp = open(os.path.join(local_dir, local_filename), "wb")
+        self.ftp.retrbinary('RETR {}'.format(os.path.join(server_dir, server_filename)), fp.write, buf_size)
+        fp.close()
+
+    def ftp_upload(self, local_filename, local_dir, server_dir, overwrite=True):
+        buf_size = 1024
+        server_filename = local_filename
+        fp = open(os.path.join(local_dir, local_filename), "rb")
+        self.ftp.storbinary("STOR {}".format(os.path.join(server_dir, server_filename)), fp, buf_size)
+        fp.close()
 
     # 事件函数
     def local_dir_returnPressed(self):
@@ -513,6 +447,7 @@ class FtpClient(main.Ui_MainWindow):
             if self.local_selected_type() == 'dir':
                 file.enter_from_current(self.local_selected_dir())
                 self.listView_local_display(file)
+                self.lineEdit_local_search.setText('')
         except Exception as e:
             self.log_list.setText(error_msg())
             logger.error(e, exc_info=True)
@@ -529,6 +464,7 @@ class FtpClient(main.Ui_MainWindow):
                 directory = self.server_selected_dir()
                 self.ftp.cwd(directory)
                 self.listView_server_display()
+                self.lineEdit_server_search.setText('')
             elif selected_type == 'file':
                 filename = self.server_selected_file()
                 self.edit_server_file(filename)
@@ -613,15 +549,8 @@ class FtpClient(main.Ui_MainWindow):
         try:
             def action_delete_handler():
                 try:
-                    selected_type = self.local_selected_type()
-                    if selected_type == 'file':
-                        filename = self.local_selected_file()
-                        print(os.path.join(file.current_dir, filename))
-                        os.remove(os.path.join(file.current_dir, filename))
-                    elif selected_type == 'dir':
-                        directory = self.local_selected_dir()
-                        shutil.rmtree(os.path.join(file.current_dir, directory))
-                    self.listView_local_display(file)
+                    items = self.local_selected_items()
+                    self.local_delete_items(items)
                 except Exception as e:
                     self.log_list.setText(error_msg())
                     logger.error(e, exc_info=True)
@@ -634,6 +563,9 @@ class FtpClient(main.Ui_MainWindow):
             self.log_list.setText(error_msg())
             logger.error(e, exc_info=True)
 
+
+
+
     def listView_server_menu(self, point):
         """
         远程文件右键菜单
@@ -643,14 +575,8 @@ class FtpClient(main.Ui_MainWindow):
         try:
             def action_delete_handler():
                 try:
-                    selected_type = self.server_selected_type()
-                    if selected_type == 'file':
-                        filename = self.server_selected_file()
-                        self.ftp.delete(filename)
-                    elif selected_type == 'dir':
-                        directory = self.server_selected_dir()
-                        self.delAllfile(directory, self.ftp.pwd())
-                    self.listView_server_display()
+                    items = self.server_selected_items()
+                    self.server_delete_items(items)
                 except Exception as e:
                     self.log_list.setText(error_msg())
                     logger.error(e, exc_info=True)
@@ -694,30 +620,11 @@ class FtpClient(main.Ui_MainWindow):
         """
         try:
             # download
-            if self.server_selected_type() == 'file':
-                if os.path.isfile(os.path.join(file.current_dir, self.server_selected_file())):
-                    reply = QMessageBox.warning(MainWindow,
-                                                "文件名重复",
-                                                "文件名重复，确定要覆盖吗？",
-                                                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
-                    if reply == QMessageBox.Yes:
-                        self.download_thread = Downloadthread(self, self.server_selected_file(), self.ftp.pwd(), file.current_dir, overwrite=True)
-                    elif reply == QMessageBox.No:
-                        self.download_thread = Downloadthread(self, self.server_selected_file(), self.ftp.pwd(),
-                                                              file.current_dir)
-                else:
-                    self.download_thread = Downloadthread(self, self.server_selected_file(), self.ftp.pwd(),
-                                                          file.current_dir)
-            else:
-                if os.path.isdir(os.path.join(file.current_dir, self.server_selected_dir())):
-                    reply = QMessageBox.warning(MainWindow,
-                                                "文件夹重复",
-                                                "文件夹重复！操作不允许",
-                                                QMessageBox.Cancel)
-                    return
-                self.download_thread = Downloadthread(self, self.server_selected_dir(), self.ftp.pwd(),
+            self.widget_server.setEnabled(False)
+            self.download_thread = Downloadthread(self, self.server_selected_items(), self.ftp.pwd(),
                                                       file.current_dir)
             self.download_thread._signal.connect(self.callback_download)  # 进程连接回传到GUI的事件
+            self.download_thread._signal_message_box.connect(self.callback_message_box)
             self.download_thread.start()
         except Exception as e:
             self.log_list.setText(error_msg())
@@ -732,36 +639,18 @@ class FtpClient(main.Ui_MainWindow):
         try:
             # upload
             self.log_list.setText('正在计算大小......')
-            if self.local_selected_type() == 'file':
-                if '{} {}'.format(file_ico, self.local_selected_file()) in self.server_list:
-                    reply = QMessageBox.warning(MainWindow,
-                                                "文件名重复",
-                                                "文件名重复，确定要覆盖吗？",
-                                                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
-                    if reply == QMessageBox.Yes:
-                        self.upload_thread = Uploadthread(self, self.local_selected_file(),file.current_dir,
-                                                              self.ftp.pwd(),overwrite=True)
-                    elif reply == QMessageBox.No:
-                        self.upload_thread = Uploadthread(self, self.local_selected_file(), file.current_dir,
-                                                            self.ftp.pwd())
-                else:
-                    self.upload_thread = Uploadthread(self, self.local_selected_file(), file.current_dir,
-                                                        self.ftp.pwd())
-            else:
-                if '{} {}'.format(dir_ico, self.local_selected_dir()) in self.server_list:
-                    reply = QMessageBox.warning(MainWindow,
-                                                "文件夹重复",
-                                                "文件夹重复！操作不允许",
-                                                QMessageBox.Cancel)
-                    return
-                self.upload_thread = Uploadthread(self, self.local_selected_dir(), file.current_dir,
+            self.widget_server.setEnabled(False)
+            files = self.local_selected_items()
+            self.upload_thread = Uploadthread(self, files, file.current_dir,
                                                     self.ftp.pwd())
             self.upload_thread._signal.connect(self.callback_upload)  # 进程连接回传到GUI的事件
             self.upload_thread._signal_bar.connect(self.callback_upload_bar)
+            self.upload_thread._signal_message_box.connect(self.callback_message_box)
             self.upload_thread.start()
         except Exception as e:
             self.log_list.setText(error_msg())
             logger.error(e, exc_info=True)
+
 
     def callback_download(self, msg):
         """
@@ -772,9 +661,9 @@ class FtpClient(main.Ui_MainWindow):
         if msg==0:
             self.log_list.setText('下载完成')
             self.listView_local_display()
+            self.widget_server.setEnabled(True)
         else:
             self.log_list.setText('已下载{}MB'.format(msg))
-        print(msg)
 
     def callback_upload(self, msg):
         """
@@ -786,6 +675,7 @@ class FtpClient(main.Ui_MainWindow):
             self.log_list.setText('上传完成')
             self.progressBar.setValue(0)
             self.listView_server_display()
+            self.widget_server.setEnabled(True)
         else:
             self.log_list.setText('已上传{}MB'.format(msg))
 
@@ -795,8 +685,14 @@ class FtpClient(main.Ui_MainWindow):
         :param msg: 进度条百分比数字
         :return:
         """
-        print(msg)
         self.progressBar.setValue(msg)
+
+    def callback_message_box(self, msg):
+        msg_d = json.loads(msg)
+        reply = QMessageBox.information(MainWindow,
+                                    msg_d['title'],
+                                    msg_d['msg'],
+                                    QMessageBox.Yes)
 
 app = QApplication(sys.argv)
 MainWindow = QMainWindow()
